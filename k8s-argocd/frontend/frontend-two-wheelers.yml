@@ -5,12 +5,16 @@ metadata:
   namespace: argocd
 spec:
   project: default
+
   source:
     repoURL: https://github.com/ganjisaikiran04-wq/Ecommerce-application-with-Microservices.git
     targetRevision: main
+    path: frontend/two-wheelers
+
   destination:
     server: https://kubernetes.default.svc
     namespace: microservices
+
   syncPolicy:
     automated:
       prune: false
