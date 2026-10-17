@@ -1,117 +1,278 @@
-name: CI/CD for app
+# name: CI/CD for app
 
+
+# on:
+#   workflow_dispatch:
+
+#   # push:
+#   #   branches:
+#   #     - main
+
+# env:
+#   AWS_REGION: us-east-1
+#   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+  
+#   FRONTEND_SERVICES: "main appliances auto beauty books computers earphones electronics fashion food furniture googlegrocery googlemusic googlepay home mobiles sports toys two-wheelers"
+#   BACKEND_SERVICE: "backend"
+
+# permissions:
+#   contents: write
+
+# jobs:
+#   deploy:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       # -------------------------
+#       # Checkout
+#       # -------------------------
+#       - name: 🧾 Checkout repository
+#         uses: actions/checkout@v4
+#         with:
+#           token: ${{ secrets.GIT_PAT }}
+
+#       # -------------------------
+#       # AWS Credentials
+#       # -------------------------
+#       - name: 🔧 Configure AWS credentials
+#         uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#           aws-region: ${{ env.AWS_REGION }}
+
+#       # -------------------------
+#       # ECR Login
+#       # -------------------------
+#       - name: 📦 Login to Amazon ECR
+#         uses: aws-actions/amazon-ecr-login@v2
+
+#       # -------------------------
+#       # Build & Push Images
+#       # -------------------------
+#       - name: 🛠 Build and Push Docker Images
+#         run: |
+#           set -e
+#           IMAGE_TAG="${GITHUB_SHA}"
+
+#           # -------- Frontend --------
+#           for service in $FRONTEND_SERVICES; do
+#             FOLDER="frontend/$service"
+#             REPO_NAME="shopping-site-$service"
+#             IMAGE_URI="$ECR_REGISTRY/$REPO_NAME:$IMAGE_TAG"
+
+#             if [ ! -f "$FOLDER/Dockerfile" ]; then
+#               echo "⚠️ No Dockerfile in $FOLDER, skipping..."
+#               continue
+#             fi
+
+#             echo "🚀 Building $service"
+
+#             aws ecr describe-repositories --repository-names $REPO_NAME >/dev/null 2>&1 || \
+#               aws ecr create-repository \
+#                 --repository-name $REPO_NAME \
+#                 --image-scanning-configuration scanOnPush=true
+
+#             docker build -t $IMAGE_URI $FOLDER
+#             docker push $IMAGE_URI
+
+#             sed -i "s|image:.*|image: $IMAGE_URI|g" "$FOLDER/deployment.yml"
+#           done
+
+#           # -------- Backend --------
+#           FOLDER="backend"
+#           REPO_NAME="shopping-site-backend"
+#           IMAGE_URI="$ECR_REGISTRY/$REPO_NAME:$IMAGE_TAG"
+
+#           echo "🚀 Building backend"
+
+#           aws ecr describe-repositories --repository-names $REPO_NAME >/dev/null 2>&1 || \
+#             aws ecr create-repository \
+#               --repository-name $REPO_NAME \
+#               --image-scanning-configuration scanOnPush=true
+
+#           docker build -t $IMAGE_URI $FOLDER
+#           docker push $IMAGE_URI
+
+#           sed -i "s|image:.*|image: $IMAGE_URI|g" "$FOLDER/backend-deployment.yml"
+
+#       # -------------------------
+#       # Commit YAML changes
+#       # -------------------------
+#       - name: 🔄 Commit updated YAML files
+#         run: |
+#           git config --global user.name "GitHub Actions"
+#           git config --global user.email "actions@github.com"
+
+#           git add frontend/**/deployment.yml backend/backend-deployment.yml
+#           git commit -m "🔄 Update image tags after build [skip ci]" || echo "No changes"
+#           git push origin main || echo "Nothing to push"
+
+      
+#       # -------------------------
+#       # Prevent CI loop
+#       # -------------------------
+#       - name: 🧠 Skip loop if commit was automated
+#         if: contains(github.event.head_commit.message, '[skip ci]')
+#         run: echo "Skipping re-triggered build"
+
+
+##GCP 
+name: CI/CD for Ecommerce App - GCP
 
 on:
   workflow_dispatch:
 
+  # Uncomment to trigger automatically on pushes to main
   # push:
   #   branches:
   #     - main
 
 env:
-  AWS_REGION: us-east-1
-  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
-  
+  GCP_PROJECT_ID: project-52cd4603-7486-4332-bab
+  GCP_PROJECT_NUMBER: "915496736487"
+  GCP_REGION: us-central1
+  GAR_REPOSITORY: ecomapp
+
   FRONTEND_SERVICES: "main appliances auto beauty books computers earphones electronics fashion food furniture googlegrocery googlemusic googlepay home mobiles sports toys two-wheelers"
-  BACKEND_SERVICE: "backend"
+  BACKEND_SERVICE: backend
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
-  deploy:
+  build-and-push:
     runs-on: ubuntu-latest
 
     steps:
-      # -------------------------
-      # Checkout
-      # -------------------------
-      - name: 🧾 Checkout repository
+      # ---------------------------------
+      # 1. Checkout repository
+      # ---------------------------------
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GIT_PAT }}
+          ref: ${{ github.ref_name }}
 
-      # -------------------------
-      # AWS Credentials
-      # -------------------------
-      - name: 🔧 Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      # ---------------------------------
+      # 2. Authenticate using WIF
+      # ---------------------------------
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v3
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: github-actions-deployer@project-52cd4603-7486-4332-bab.iam.gserviceaccount.com
+          project_id: project-52cd4603-7486-4332-bab
 
-      # -------------------------
-      # ECR Login
-      # -------------------------
-      - name: 📦 Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      # ---------------------------------
+      # 3. Set up Google Cloud CLI
+      # ---------------------------------
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
 
-      # -------------------------
-      # Build & Push Images
-      # -------------------------
-      - name: 🛠 Build and Push Docker Images
+      # ---------------------------------
+      # 4. Configure Docker authentication
+      # ---------------------------------
+      - name: Configure Docker for Artifact Registry
         run: |
-          set -e
+          gcloud auth configure-docker \
+            "${GCP_REGION}-docker.pkg.dev" --quiet
+
+      # ---------------------------------
+      # 5. Build and push Docker images
+      # ---------------------------------
+      - name: Build and Push Docker Images
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
           IMAGE_TAG="${GITHUB_SHA}"
+          REGISTRY="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}"
 
-          # -------- Frontend --------
-          for service in $FRONTEND_SERVICES; do
-            FOLDER="frontend/$service"
-            REPO_NAME="shopping-site-$service"
-            IMAGE_URI="$ECR_REGISTRY/$REPO_NAME:$IMAGE_TAG"
+          echo "Project: ${GCP_PROJECT_ID}"
+          echo "Registry: ${REGISTRY}"
+          echo "Image tag: ${IMAGE_TAG}"
 
-            if [ ! -f "$FOLDER/Dockerfile" ]; then
-              echo "⚠️ No Dockerfile in $FOLDER, skipping..."
-              continue
+          # Verify Artifact Registry repository exists
+          gcloud artifacts repositories describe "${GAR_REPOSITORY}" \
+            --project="${GCP_PROJECT_ID}" \
+            --location="${GCP_REGION}"
+
+          # ---------------------------------
+          # Frontend microservices
+          # ---------------------------------
+          for service in ${FRONTEND_SERVICES}; do
+            FOLDER="frontend/${service}"
+            DEPLOYMENT_FILE="${FOLDER}/deployment.yml"
+            IMAGE_NAME="shopping-site-${service}"
+            IMAGE_URI="${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+
+            if [[ ! -f "${FOLDER}/Dockerfile" ]]; then
+              echo "::error::Dockerfile not found: ${FOLDER}/Dockerfile"
+              exit 1
             fi
 
-            echo "🚀 Building $service"
+            if [[ ! -f "${DEPLOYMENT_FILE}" ]]; then
+              echo "::error::Deployment manifest not found: ${DEPLOYMENT_FILE}"
+              exit 1
+            fi
 
-            aws ecr describe-repositories --repository-names $REPO_NAME >/dev/null 2>&1 || \
-              aws ecr create-repository \
-                --repository-name $REPO_NAME \
-                --image-scanning-configuration scanOnPush=true
+            echo "Building frontend: ${service}"
 
-            docker build -t $IMAGE_URI $FOLDER
-            docker push $IMAGE_URI
+            docker build \
+              --pull \
+              -t "${IMAGE_URI}" \
+              "${FOLDER}"
 
-            sed -i "s|image:.*|image: $IMAGE_URI|g" "$FOLDER/deployment.yml"
+            docker push "${IMAGE_URI}"
+
+            # Update only container image fields.
+            # This assumes each deployment.yml contains one container image.
+            IMAGE_COUNT=$(grep -Ec '^[[:space:]]*image:[[:space:]]*' "${DEPLOYMENT_FILE}" || true)
+
+            if [[ "${IMAGE_COUNT}" -ne 1 ]]; then
+              echo "::error::Expected exactly one image field in ${DEPLOYMENT_FILE}; found ${IMAGE_COUNT}"
+              exit 1
+            fi
+
+            sed -i -E \
+              "s|^([[:space:]]*image:[[:space:]]*).*|\1${IMAGE_URI}|" \
+              "${DEPLOYMENT_FILE}"
+
+            echo "Updated ${DEPLOYMENT_FILE}"
           done
 
-          # -------- Backend --------
+          # ---------------------------------
+          # Backend microservice
+          # ---------------------------------
           FOLDER="backend"
-          REPO_NAME="shopping-site-backend"
-          IMAGE_URI="$ECR_REGISTRY/$REPO_NAME:$IMAGE_TAG"
+          DEPLOYMENT_FILE="backend/backend-deployment.yml"
+          IMAGE_URI="${REGISTRY}/shopping-site-backend:${IMAGE_TAG}"
 
-          echo "🚀 Building backend"
+          if [[ ! -f "${FOLDER}/Dockerfile" ]]; then
+            echo "::error::Backend Dockerfile not found"
+            exit 1
+          fi
 
-          aws ecr describe-repositories --repository-names $REPO_NAME >/dev/null 2>&1 || \
-            aws ecr create-repository \
-              --repository-name $REPO_NAME \
-              --image-scanning-configuration scanOnPush=true
+          if [[ ! -f "${DEPLOYMENT_FILE}" ]]; then
+            echo "::error::Backend deployment manifest not found"
+            exit 1
+          fi
 
-          docker build -t $IMAGE_URI $FOLDER
-          docker push $IMAGE_URI
+          echo "Building backend"
 
-          sed -i "s|image:.*|image: $IMAGE_URI|g" "$FOLDER/backend-deployment.yml"
+          docker build \
+            --pull \
+            -t "${IMAGE_URI}" \
+            "${FOLDER}"
 
-      # -------------------------
-      # Commit YAML changes
-      # -------------------------
-      - name: 🔄 Commit updated YAML files
-        run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
+          docker push "${IMAGE_URI}"
 
-          git add frontend/**/deployment.yml backend/backend-deployment.yml
-          git commit -m "🔄 Update image tags after build [skip ci]" || echo "No changes"
-          git push origin main || echo "Nothing to push"
+          IMAGE_COUNT=$(grep -Ec '^[[:space:]]*image:[[:space:]]*' "${DEPLOYMENT_FILE}" || true)
 
-      
-      # -------------------------
-      # Prevent CI loop
-      # -------------------------
-      - name: 🧠 Skip loop if commit was automated
-        if: contains(github.event.head_commit.message, '[skip ci]')
-        run: echo "Skipping re-triggered build"
+          if [[ "${IMAGE_COUNT}" -ne 1 ]]; then
+            echo "::error::Expected exactly
